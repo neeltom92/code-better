@@ -6,7 +6,7 @@ A single Claude Code skill for senior engineers. It merges [obra/superpowers](ht
 Gate --> Plan --> Teardown --> Build (test-first, debug) --> Verify --> Commit
 ```
 
-- **Gate**: understand the code, then declare a stakes tier (`sandbox` / `internal` / `prod`) and a scope rung (`one-liner` / `micro` / `full` / `project`). The rung sets how much process the later stages get.
+- **Gate**: in an existing repo, first build or refresh a ≤80-line code map (`.claude/code-map.md`: stack, commands, layout, entry points, main flows, hubs, danger zones), imported from `CLAUDE.local.md` so every later session loads it. Personal by default (kept out of git via `.git/info/exclude`); no graphify install needed. Then understand the code, then declare a stakes tier (`sandbox` / `internal` / `prod`) and a scope rung (`one-liner` / `micro` / `full` / `project`). The rung sets how much process the later stages get.
 - **Plan**: steps with check commands, reuse first, and a rollback line for every destructive step. Adds dry-run, idempotency, metric bands, and a kill-switch when relevant.
 - **Teardown**: cold review of the plan before any code exists. Two passes at `micro`; five rounds by a fresh subagent at `full` and above.
 - **Build**: lazy ladder (reuse, then stdlib, then minimum code), red-green TDD, `terraform plan` / `helm diff` as the failing check for infra, root-cause debugging with a 2-failed-fixes stop.
@@ -43,6 +43,7 @@ At `full` and `project` rung it writes plans and session state under `.pipeline/
 ```text
 skills/code-better/SKILL.md                  the skill
 skills/code-better/references/templates.md   plan file and session-state formats
+skills/code-better/references/code-map.md    how the repo code map is built, wired in, and refreshed
 CLAUDE.md                                    editing rules for this repo
 ```
 

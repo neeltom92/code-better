@@ -43,6 +43,7 @@ Gates are fast checks, not ceremony. Small work gets less process, never more.
 
 Understand first:
 
+- **Code map (existing repos):** read `.claude/code-map.md` first; it usually auto-loads via `CLAUDE.local.md`. Missing, or stale against HEAD → build or refresh it per `references/code-map.md` before the first change. `graphify-out/` exists → query that instead. Orientation-only request → the map is the whole Gate; skip tier and rung.
 - Turn the request into observable acceptance criteria and explicit non-goals.
 - Search before reading. Read only the line ranges you need. Trace entry point → effect. Grep every caller of anything you will change.
 - Unfamiliar API, library, or version → read its docs or changelog first. Never write against an API from memory.

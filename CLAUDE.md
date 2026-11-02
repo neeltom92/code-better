@@ -8,6 +8,7 @@ Home of `code-better`, a single Claude Code skill that merges obra/superpowers a
 
 - `skills/code-better/SKILL.md` — the skill. Frontmatter `name` + `description` (≤1024 chars, starts with "Use when…", lists triggers only, never summarizes the workflow — Claude skips the body if the description reads like a summary).
 - `skills/code-better/references/templates.md` — plan-file and `.pipeline/state.md` formats, loaded only at full/project rung.
+- `skills/code-better/references/code-map.md` — how the Gate builds/refreshes a ≤80-line `.claude/code-map.md` in target repos and imports it via `CLAUDE.local.md` (graphify-lite, no install).
 
 ## Install / use
 
