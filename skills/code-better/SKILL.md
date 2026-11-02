@@ -35,6 +35,7 @@ Gates are fast checks, not ceremony. Small work gets less process, never more.
 | New behavior or change | Gate → Plan → Teardown → Build → Verify → Commit |
 | Something broken (error, failing test, CI, pod, perf) | Gate → Debug → Verify → Commit |
 | Restructure without behavior change | Gate → Plan → Refactor → Verify → Commit |
+| Review a diff or PR | Gate → review fan-out (Subagents) → report |
 | Received review feedback | Review → Build → Verify |
 | "Is it done?" / about to commit or open PR | Verify → Commit |
 
@@ -55,7 +56,7 @@ Then declare tier and rung in one line: `gate: tier=internal rung=micro - revers
 |---|---|---|
 | sandbox | local, throwaway, nothing at risk | nothing |
 | internal | your own systems, CI, staging could break | rollback line for destructive steps |
-| prod | production, customer data, payments, public surface, security | approval before Build, rollback + dry-run mandatory, fresh-reviewer pass before done |
+| prod | production, customer data, payments, public surface, security | approval before Build, rollback + dry-run mandatory, review fan-out before done |
 
 **Scope rung** (pick the lower one when unsure):
 
@@ -160,8 +161,7 @@ Never: delete or weaken tests, suppress errors, add sleeps or silent fallbacks, 
 ### Refactor
 
 - Tests green before the first move. No coverage → add characterization checks first.
-- No behavior changes mixed in. One move at a time, green between moves.
-- Preserve public interfaces, error behavior, and ordering unless in scope.
+- No behavior changes mixed in. One move at a time, green between moves. Preserve interfaces, errors, and ordering.
 
 ## Rollback (applies at every stage)
 
@@ -184,7 +184,7 @@ Before any "done / fixed / passing" claim:
 3. Classify evidence: **terminal** (run this turn), **user-attested** (labeled, never simulated), **integrity** (counts, checksums, dry-run vs live: exit 0 with wrong numbers = FAIL), **metric** (observed value against its band).
 4. Near-miss is a fail: `0.819 vs 0.82` goes to the user, not rounded up.
 5. **Drift:** compare the plan against what was built. List divergences only, or "no drift".
-6. Prod tier → hand the diff plus evidence to a fresh reviewer subagent before claiming done.
+6. Full rung or prod tier → run the review fan-out (see Subagents) on the diff before claiming done.
 
 Report compactly: `verify: 9/9 pass (7 terminal, 1 integrity, 1 metric in band); no drift`. Show failures in full. Subagent says done → check its diff yourself. Acceptance passes → stop. No polish, extra tests, or cleanup.
 
@@ -201,13 +201,24 @@ Never commit or push unless the user asks. When asked:
 
 **Receiving feedback:** read all of it first; ask about unclear items before implementing any. Verify each claim against the code; reviewers can be wrong. Push back with technical reasons when a suggestion breaks behavior, adds unused features, or conflicts with the user's decisions. No performative agreement. Order: blocking → simple → complex; test each.
 
-**Requesting review** (full rung and up): give a fresh reviewer the diff and the requirements, not your conclusions.
+**Requesting review:** micro and below → self-review the diff. Full rung, prod tier, or a PR → review fan-out (Subagents).
 
-## Delegation
+## Subagents
 
-- ≤3 tool calls → do it yourself. Parallel subagents only for independent work with no shared state.
-- Brief like a peer: goal, scope, constraints, what's ruled out, expected output.
-- Workers edit only their assigned files. No git, no plan edits, no gate calls. The orchestrator merges, verifies, and commits.
+Use them for an independent read (no shared context) or for parallel work with no shared state. ≤3 tool calls → do it yourself.
+
+- **Brief like a peer:** goal, scope, constraints, what's ruled out, expected output format. Reviewers get the requirements and the diff, never your conclusions.
+- **Model by job:** cheapest for triage and file lookups; mid for summaries and rule checks; strongest for the bug and defect lenses and for validation.
+- **Workers** edit only their assigned files. No git, no plan edits, no gate calls. The orchestrator merges, verifies, and commits. Subagent says done → check its diff yourself.
+
+**Review fan-out:**
+
+1. **Triage** (cheap): stop if the change is trivial, already reviewed, or not ready. Prod tier is never trivial.
+2. **Scope the rules:** list the CLAUDE.md files at the root and in parent dirs of changed files. A rule only applies to files under it.
+3. **Parallel reviewers**, one lens each: rule compliance (quote the rule), bugs visible in the diff alone, defects in the introduced code (logic, security). Prod tier: two reviewers per lens, and the defect lens may read outside the diff to check rollback, rerun-safety, auth, and locking.
+4. **High signal only:** won't compile or parse, wrong for every input, or an in-scope rule clearly broken. Never flag: style, pre-existing issues, linter-catchable issues, nitpicks, rules silenced in code, or input-dependent maybes (prod tier: flag them if a concrete input breaks it).
+5. **Validate** each finding with a separate subagent given only the finding and the code. Not confirmed → drop it.
+6. **Report** confirmed findings, one per issue, with `file:line`. None → "No issues found." Post to a PR only when asked.
 
 ## Session state (project rung only)
 
@@ -234,4 +245,4 @@ Keep `.pipeline/state.md`: one line per stage exit with the gate result and the 
 
 ## Sources
 
-Merged from obra/superpowers (brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion, receiving-code-review, subagent-driven-development, using-git-worktrees, finishing-a-development-branch) and bmtrnavsky/disciplined-vibe-coding (pipeline gates and logged bypass, stakes tiers, economy ladder, teardown, plan rules for rollback / dry-run / rerun-safe / kill-switch / payments, evidence classes, drift, secret scan, wayfinder), plus the ponytail lazy ladder and caveman process skills. All MIT.
+Merged from obra/superpowers (brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion, receiving-code-review, subagent-driven-development, using-git-worktrees, finishing-a-development-branch) and bmtrnavsky/disciplined-vibe-coding (pipeline gates and logged bypass, stakes tiers, economy ladder, teardown, plan rules for rollback / dry-run / rerun-safe / kill-switch / payments, evidence classes, drift, secret scan, wayfinder), the review fan-out logic of the anthropics/claude-plugins-official `code-review` command (triage, scoped rules, parallel lenses, validate-then-filter, model tiering), plus the ponytail lazy ladder and caveman process skills. superpowers and disciplined-vibe-coding are MIT; the code-review command is Apache-2.0 and only its logic is reused, not its text.

@@ -11,6 +11,7 @@ Gate --> Plan --> Teardown --> Build (test-first, debug) --> Verify --> Commit
 - **Teardown**: cold review of the plan before any code exists. Two passes at `micro`; five rounds by a fresh subagent at `full` and above.
 - **Build**: lazy ladder (reuse, then stdlib, then minimum code), red-green TDD, `terraform plan` / `helm diff` as the failing check for infra, root-cause debugging with a 2-failed-fixes stop.
 - **Verify**: fresh evidence by class (terminal, user-attested, integrity, metric). A near-miss is a fail. Drift is checked against the plan.
+- **Subagents**: review fan-out for full/prod work. Parallel reviewers each take one lens (scoped CLAUDE.md rules, diff bugs, introduced-code defects); every finding is validated by a separate subagent before it is reported. Models are picked by job.
 - **Commit**: only when asked. Secret scan the staged diff first. One logical change per commit.
 
 A failed gate blocks the next stage unless the user explicitly bypasses it, and the bypass is stated.
@@ -47,4 +48,4 @@ CLAUDE.md                                    editing rules for this repo
 
 ## Credits
 
-Built on obra/superpowers (MIT, Jesse Vincent) and bmtrnavsky/disciplined-vibe-coding (MIT, Brad Trnavsky), with ideas from the ponytail and caveman Claude Code plugins.
+Built on obra/superpowers (MIT, Jesse Vincent) and bmtrnavsky/disciplined-vibe-coding (MIT, Brad Trnavsky), with ideas from the ponytail and caveman Claude Code plugins. The review fan-out follows the logic of the `code-review` command in [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) (Apache-2.0); no text is copied.
