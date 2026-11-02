@@ -5,7 +5,7 @@ description: Use when writing, changing, fixing, refactoring, or reviewing code 
 
 # Code Better
 
-One pipeline for all coding work. Same stages every time; ceremony scales with risk.
+One pipeline for all coding work, built for large existing codebases. Same stages every time; ceremony scales with risk.
 
 ```text
 Gate --> Plan --> Teardown --> Build (test-first, debug) --> Verify --> Commit
@@ -24,57 +24,58 @@ User instructions (CLAUDE.md, direct requests) override this skill.
 
 ## Gate rule
 
-Each stage exits with a one-line result: `<stage>: pass|fail - <reason>`. A failed gate blocks the next stage. The only way past a red gate without fixing it is an explicit user bypass, stated in chat as: who approved, what was red, why it was waived. A silent skip is a defect.
-
-Gates are fast checks, not ceremony. Small work gets less process, never more.
+Each stage exits with one line, in order: `map:` → `gate:` → (`debug:`) → `plan:` → `teardown/<round>:` → `build:` → `verify:` → `commit:`. Format: `<stage>: pass|fail - <reason>`; a stage the rung skips prints nothing. A failed gate blocks the next stage. The only way past a red gate without fixing it is an explicit user bypass, stated in chat as: who approved, what was red, why it was waived. A silent skip is a defect. Gates are fast checks, not ceremony: small work gets less process, never more.
 
 ## Pick the entry
 
 | Situation | Path |
 |---|---|
 | New behavior or change | Gate → Plan → Teardown → Build → Verify → Commit |
-| Something broken (error, failing test, CI, pod, perf) | Gate → Debug → Verify → Commit |
-| Restructure without behavior change | Gate → Plan → Refactor → Verify → Commit |
+| Something broken (error, failing test, CI, pod, perf) | Gate → Debug (find cause) → Plan → Teardown → fix → Verify → Commit |
+| Restructure without behavior change | Gate → Plan → Teardown → Refactor → Verify → Commit |
 | Review a diff or PR | Gate → review fan-out (Subagents) → report |
-| Received review feedback | Review → Build → Verify |
+| Received review feedback | Gate → Review → Plan → Teardown → Build → Verify → Commit |
 | "Is it done?" / about to commit or open PR | Verify → Commit |
+
+Plan and Teardown always run at the gate's rung: at one-liner that is one chat line and no teardown.
 
 ## 1. Gate: understand, classify, size
 
 Understand first:
 
-- **Code map (existing repos):** read `.claude/code-map.md` first; it usually auto-loads via `CLAUDE.local.md`. Missing, or stale against HEAD → build or refresh it per `references/code-map.md` before the first change. `graphify-out/` exists → query that instead. Orientation-only request → the map is the whole Gate; skip tier and rung.
-- Turn the request into observable acceptance criteria and explicit non-goals.
-- Search before reading. Read only the line ranges you need. Trace entry point → effect. Grep every caller of anything you will change.
+- **Code map:** `.claude/state.md` exists → read it first and resume at its last `next:`. Read `.claude/code-map.md` (usually auto-loaded via `CLAUDE.local.md`). Missing, or `git diff --name-status <at>..HEAD` touches entry points, build/CI files, or top-level dirs → build or refresh it per `references/code-map.md` before the first change (a clearly one-line request may defer it); else `map: pass - fresh at <at>`. `graphify-out/` exists → query that instead. Orientation-only request → the map is the whole Gate.
+- **Local rules:** read the nearest CLAUDE.md / AGENTS.md / CONTRIBUTING and lint config for each subtree you touch, plus 1-2 sibling files. Copy their patterns (errors, logging, config loading, naming, test layout) even where you'd choose differently.
+- Turn the request into observable acceptance criteria and explicit non-goals. Rambling or self-correcting request → state the reading you're acting on in one line.
+- **Blast radius** (before the first edit): grep every reference to what you change, as identifier AND string: callers, config/env keys, Helm values and templates, TF outputs and remote-state consumers, CI files, SQL, reflection/DI. Generated file (header says so, or a map danger zone) → change the source or generator and regenerate.
 - Unfamiliar API, library, or version → read its docs or changelog first. Never write against an API from memory.
 - Ambiguous, and the answer changes the work → ask ONE question with a recommended default. Otherwise state the default and proceed.
 
-Then declare tier and rung in one line: `gate: tier=internal rung=micro - reversible 2-file change`.
+Then declare: `gate: pass - tier=internal rung=micro, one component, reversible`.
 
-**Stakes tier:**
+**Stakes tier** (by where the change ships, not where you edit it):
 
 | Tier | Means | Adds |
 |---|---|---|
-| sandbox | local, throwaway, nothing at risk | nothing |
-| internal | your own systems, CI, staging could break | rollback line for destructive steps |
-| prod | production, customer data, payments, public surface, security | approval before Build, rollback + dry-run mandatory, review fan-out before done |
+| sandbox | never ships: spike, scratch, throwaway | nothing; rollback can be "discard the branch" |
+| internal | ships to your own systems, CI, staging; additive public-surface change | Plan defaults |
+| prod | runs in production, customer data, payments, auth/secrets, breaking public-surface change | approval before Build, rollback + dry-run mandatory, review fan-out before done; never store card data |
 
-**Scope rung** (pick the lower one when unsure):
+**Scope rung** (by blast radius, not file count; pick the lower one when unsure):
 
-| Rung | When | Plan | Teardown | Commit |
-|---|---|---|---|---|
-| one-liner | 1 file, reversible, no open questions | the chat line | skip | single commit |
-| micro | ≤3 files, reversible, no new dependency | 3 bullets | 2 passes, self | single commit |
-| full | more files, irreversible, new dependency, schema/API change | full plan | 5 rounds, fresh subagent | changelog entry if repo keeps one |
-| project | spans sessions, milestones | plan per milestone + state file | 5 rounds per milestone | changelog + tag at release |
+| Rung | When | Plan | Teardown |
+|---|---|---|---|
+| one-liner | 1 logical edit (+ its test), reversible, no open questions | the chat line | skip |
+| micro | one component, reversible, no public-surface/schema change, no new dependency | 4 bullets | 2 passes, self |
+| full | crosses components, irreversible, new dependency, public-surface/schema change, or a map hub/danger zone | plan file | 5 rounds, fresh subagent |
+| project | spans sessions, milestones | plan per milestone + state file | 5 rounds per milestone |
 
-**Step-up rule:** when blast radius grows mid-work (more files, new dependency, irreversible or prod touch), declare the higher rung and backfill its missing artifacts before continuing. Prod touches need user confirmation now. A rung never steps down mid-build. Prod tier is never a one-liner.
+**Step-up rule:** when blast radius grows mid-work (new component, public-surface change, new dependency, irreversible or prod touch), declare the higher rung and backfill its missing artifacts before continuing. Prod touches need user confirmation now. A rung never steps down mid-build. Prod tier is never a one-liner.
 
 ## 2. Plan
 
-Real design choices → 2-3 approaches with trade-offs, simplest first, recommend one. Get approval before building when the change spans components, adds a dependency, changes a schema/API, or is prod tier. Too big → split into shippable slices; plan the first.
+Existing pattern covers it → follow it, no alternatives. Real design choices → 2-3 approaches with trade-offs, simplest first, recommend one. Get approval before building when the change spans components, adds a dependency, changes a schema or public surface, or is prod tier. Too big → split into shippable slices; plan the first.
 
-Every plan, at any rung, names:
+Every plan, at any rung, names (the 4 bullets at micro):
 
 - **Steps**: each with exact file, the change, and the check command that proves it. No placeholders ("TBD", "add error handling", "similar to above").
 - **Reuse first**: existing code, stdlib, installed deps, or managed services that cover it. New code needs a one-line reason.
@@ -83,14 +84,14 @@ Every plan, at any rung, names:
 
 Add when relevant:
 
+- **Compat**: public-surface changes (API fields, CLI flags, env vars, config keys, Helm values, TF variables/outputs, event/DB schemas) are additive. Rename = add new, keep old working, mark deprecated. TF resource rename → `moved` block; plan must show 0 destroys.
 - **Dry-run step** before any destructive action. The dry run gets its own check.
 - **Rerun-safe**: jobs, migrations, and data scripts must pass when run twice. Name the idempotency mechanism.
 - **Budget line** for anything over ~2 minutes of wall time: expected duration, cost, completion signal.
 - **Metric band** for nondeterministic checks: `p95 < 200ms`, `F1 >= 0.82, seed 42`. Not a bare boolean.
 - **Kill-switch** for anything that runs unsupervised (bots, cron, daemons, autoscalers): the decision policy is config, and the off switch exists before the code.
-- **Payments**: provider-hosted checkout only. A plan that stores raw card data is rejected.
 
-Full rung and up: write the plan to a file (format in `references/templates.md`). Below that, keep it in chat.
+Full rung and up: write the plan to `.claude/plans/` (format in `references/templates.md`). Below that, keep it in chat. Exit: `plan: pass - 4 steps, rollback: git revert`.
 
 ## 3. Teardown: cold review before code
 
@@ -119,21 +120,24 @@ Stop at the first rung that holds:
 
 - Touch only what the plan names. Every changed line traces to the request. Discoveries go back to the plan, not straight into code.
 - No unrequested abstractions, config, flags, modes, scaffolding "for later", drive-by refactors, renames, or reformatting.
-- Remove dead code your change created. Mention other dead code; don't delete it.
+- Remove dead code your change created. Mention other dead code; don't delete it. Odd legacy code guards a past bug until its history (`git log -L`, `git blame` → PR) shows otherwise.
 - Mark deliberate shortcuts with their ceiling: `# simplified: global lock; per-account locks if throughput matters`.
 - Never simplify away: input validation at trust boundaries, error handling that prevents data loss, security, accessibility.
-- Diff grows to ~2x the plan's estimate → stop and report before continuing.
+- Diff touches files the plan doesn't name, or grows past ~2x the planned steps → stop and report before continuing.
 
 ### Test first (red → green → refactor)
 
-1. Smallest test for one behavior. Run it. Watch it fail for the expected reason. Passes already → the test is wrong.
+0. **Baseline:** before the first edit, run the tests for the area you'll touch. Already red on clean HEAD → pre-existing: record it, don't fix it unless in scope.
+1. Smallest test for one behavior. Run it. Watch it fail for the expected reason. Fails for another reason (import, typo) → fix that and re-run. Passes already → wrong test, unless it is a characterization check pinning current behavior.
 2. Minimum code to pass. Run it. Green, with no other tests broken. Refactor with tests green. Repeat.
 
 Wrote code before the test? Delete it and start from the test. Don't keep it "as reference".
 
-- No test suite → leave one runnable check for non-trivial logic (`assert`-based `__main__` or one small test file). Trivial one-liners need none.
+- No tests near the change → first pin current behavior at the nearest existing seam (CLI, HTTP, job entry, public function) with the repo's runner. Don't refactor for testability inside a fix or feature. Trivial one-liners need none.
 - State exceptions: throwaway prototypes, generated code, pure config. Verify those by running them.
-- **Infra: the failing check is the plan or diff.** `terraform plan -out`, `helm diff` / `helm template`, `kubectl diff` or `--dry-run=server`, `actionlint`. Read the diff before any apply.
+- **Infra: the failing check is the plan or diff.** Offline first: `terraform fmt -check`, `terraform init -backend=false && terraform validate`, `helm template` / `helm lint`, `actionlint`. Live diffs (`terraform plan -out=tfplan`, `helm diff`, `kubectl diff`) only via the repo's own path (Makefile, Atlantis, CI) or after confirming backend, workspace, and `kubectl config current-context`. No `init -upgrade`, `state`, or `apply` without approval.
+
+Exit: `build: pass - red→green, 3 files`.
 
 ### Debug (anything broken, during Build or as the entry)
 
@@ -141,9 +145,9 @@ Root cause first, in order:
 
 1. Capture the exact symptom: error text, expected vs actual, environment, input. Can't reproduce → observe (logs, timing, exact errors); never code blind.
 2. Reproduce with the smallest reliable case. Keep the original failing input.
-3. Read evidence: stack trace, logs, `git log -p` / `git diff`, config, data flow. Post-upgrade breakage → read the vendor changelog.
+3. Read evidence: stack trace, logs, config, data flow, and history of the exact lines (`git log -L :<func>:<file>`, `git blame`). Post-upgrade breakage → read the vendor changelog.
 4. Compare against something that works: similar code, last green run, previous version.
-5. Rank falsifiable hypotheses. Test one at a time with the cheapest check that tells them apart.
+5. Rank falsifiable hypotheses. Test one at a time with the cheapest check that tells them apart. Exit: `debug: pass - cause: <x>` → plan the fix at the gate's rung, or `debug: pass - not a bug: <evidence>` → report and stop.
 6. Fix at the first point where actual diverges from expected, at the narrowest layer that owns the bug. One guard in the shared function beats a guard in every caller.
 7. Prove it: a check that fails before the fix and passes after. Re-run the original reproduction.
 
@@ -170,8 +174,8 @@ Before any destructive or irreversible step, have the undo ready and tested wher
 
 - **Code:** work on a branch or `git worktree` (verify the worktree dir is gitignored). Shared history → `git revert <sha>`, never `reset --hard` or force-push.
 - **Infra:** `terraform plan -out=tfplan` and apply that exact plan; know the previous state version. `helm rollback <release> <rev>`. `kubectl rollout undo deploy/<name>`.
-- **Data/schema:** backup or snapshot first, then a down-migration or expand → migrate → contract. Verify row counts and checksums on both sides.
-- **Flags:** risky behavior ships behind a flag or config toggle that can be turned off without a deploy.
+- **Data/schema:** new migration via the repo's tool; never edit an applied one. Backup or snapshot first, then a down-migration, or expand → migrate → contract so old and new code both run mid-deploy. Verify row counts and checksums on both sides.
+- **Flags:** risky prod-tier behavior ships behind the repo's existing flag or config mechanism (never a new one), default off. This is the one flag Scope allows; the plan names its removal step.
 - **Abort criteria:** name the signal that triggers rollback (error rate, failed health check, mismatched counts) before you start.
 
 Prod restarts, rollbacks, and data fixes need user approval first.
@@ -180,29 +184,29 @@ Prod restarts, rollbacks, and data fixes need user approval first.
 
 Before any "done / fixed / passing" claim:
 
-1. Name the command that proves each acceptance criterion. Run it fresh and in full.
-2. Read all output: exit code, failure count, warnings, skipped tests (skipped = not passed).
+1. Name the command that proves each acceptance criterion. Run it fresh: targeted tests while building; before claiming done, the affected package's suite plus the repo's CI checks for changed paths (lint, format, typecheck, `terraform validate`, `helm lint`, codegen drift; read them from the CI config). Whole-repo suite only if cheap.
+2. Read all output: exit code, failure count, warnings, skipped tests (skipped = not passed). Red that matches the baseline → pre-existing, report it. Flaky → report both results; never rerun until green.
 3. Classify evidence: **terminal** (run this turn), **user-attested** (labeled, never simulated), **integrity** (counts, checksums, dry-run vs live: exit 0 with wrong numbers = FAIL), **metric** (observed value against its band).
 4. Near-miss is a fail: `0.819 vs 0.82` goes to the user, not rounded up.
 5. **Drift:** compare the plan against what was built. List divergences only, or "no drift".
-6. Full rung or prod tier → run the review fan-out (see Subagents) on the diff before claiming done.
+6. Full rung and up, or prod tier → run the review fan-out (see Subagents) on the diff before claiming done.
 
-Report compactly: `verify: 9/9 pass (7 terminal, 1 integrity, 1 metric in band); no drift`. Show failures in full. Subagent says done → check its diff yourself. Acceptance passes → stop. No polish, extra tests, or cleanup.
+Report compactly: `verify: pass - 9/9 (7 terminal, 1 integrity, 1 metric in band); 1 pre-existing red; no drift`. Show failures in full. Subagent says done → check its diff yourself. Acceptance and CI checks pass → stop. No polish, extra tests, or cleanup.
 
 ## 6. Commit
 
 Never commit or push unless the user asks. When asked:
 
 - **Secret scan the staged diff** (`git diff --cached`) for keys, tokens, passwords, connection strings, `.env` files. A hit blocks the commit until the secret is moved out and, if it ever left the machine, revoked.
-- One logical change per commit. Message: `type: subject`, body says why. The acceptance criteria are the proof statement.
-- Rung-scaled: one-liner and micro ship as one commit. Full adds a changelog entry if the repo keeps one. Tags only for project releases.
+- One logical change per commit. Message in the repo's convention, else `type: subject`; body says why. The acceptance criteria are the proof statement.
+- Follow the repo's changelog convention (CHANGES file, changesets, release notes) at every rung. Tags only for project releases.
 - Finishing a branch: offer merge locally / push + PR / keep / discard. Discard needs explicit confirmation.
 
 ## Review
 
 **Receiving feedback:** read all of it first; ask about unclear items before implementing any. Verify each claim against the code; reviewers can be wrong. Push back with technical reasons when a suggestion breaks behavior, adds unused features, or conflicts with the user's decisions. No performative agreement. Order: blocking → simple → complex; test each.
 
-**Requesting review:** micro and below → self-review the diff. Full rung, prod tier, or a PR → review fan-out (Subagents).
+**Requesting review:** micro and below → self-review the diff. Full rung and up, prod tier, or a PR → review fan-out (Subagents).
 
 ## Subagents
 
@@ -216,14 +220,14 @@ Use them for an independent read (no shared context) or for parallel work with n
 
 1. **Triage** (cheap): stop if the change is trivial, already reviewed, or not ready. Prod tier is never trivial.
 2. **Scope the rules:** list the CLAUDE.md files at the root and in parent dirs of changed files. A rule only applies to files under it.
-3. **Parallel reviewers**, one lens each: rule compliance (quote the rule), bugs visible in the diff alone, defects in the introduced code (logic, security). Prod tier: two reviewers per lens, and the defect lens may read outside the diff to check rollback, rerun-safety, auth, and locking.
+3. **Parallel reviewers**, one lens each: rule compliance (quote the rule), bugs visible in the diff alone, defects in the introduced code (logic, security, compat). Prod tier: two reviewers per lens, and the defect lens may read outside the diff to check rollback, rerun-safety, auth, and locking.
 4. **High signal only:** won't compile or parse, wrong for every input, or an in-scope rule clearly broken. Never flag: style, pre-existing issues, linter-catchable issues, nitpicks, rules silenced in code, or input-dependent maybes (prod tier: flag them if a concrete input breaks it).
 5. **Validate** each finding with a separate subagent given only the finding and the code. Not confirmed → drop it.
 6. **Report** confirmed findings, one per issue, with `file:line`. None → "No issues found." Post to a PR only when asked.
 
-## Session state (project rung only)
+## Files this skill writes
 
-Keep `.claude/state.md`: one line per stage exit with the gate result and the next step, so a new session resumes without a re-brief. Format in `references/templates.md`. Everything this skill writes lives under the repo-root `.claude/` (`code-map.md`, `plans/`, `state.md`) and stays out of git via `.git/info/exclude` unless the user wants it shared.
+`.claude/code-map.md`, `.claude/plans/`, `.claude/state.md` (project rung: one line per stage exit with gate result and next step), all under the repo root, plus one `@.claude/code-map.md` line in the repo-root `CLAUDE.local.md`. Keep all four out of git unless the user wants them shared: append each to `$(git rev-parse --git-path info/exclude)` (works in worktrees; skip lines already there).
 
 ## Output
 
@@ -237,13 +241,9 @@ Keep `.claude/state.md`: one line per stage exit with the gate result and the ne
 |---|---|
 | "Too simple to need a test / a plan" | Pick the one-liner rung. It still has a check. |
 | "Rollback is obvious" | Write the line. Obvious undo steps fail at 3am. |
+| "Cleaner to rename it" | Someone you can't see reads the old name. Add, deprecate. |
 | "Quick fix now, investigate later" | Later never comes. Find the cause. |
 | "Should work now" / "close enough" | Run it. A near-miss is a fail. |
 | "I'll add it now, we'll need it" / "while I'm here" | YAGNI. Out of scope: mention it, don't do it. |
 | "One more fix attempt" (after 2) | Stop. Report and let the user choose. |
 | "The reviewer / subagent says it's fine" | Verify against the code and the diff. |
-| "Need more context first" (forever) | Stop exploring once evidence names the cause or the blocker. |
-
-## Sources
-
-Merged from obra/superpowers (brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion, receiving-code-review, subagent-driven-development, using-git-worktrees, finishing-a-development-branch) and bmtrnavsky/disciplined-vibe-coding (pipeline gates and logged bypass, stakes tiers, economy ladder, teardown, plan rules for rollback / dry-run / rerun-safe / kill-switch / payments, evidence classes, drift, secret scan, wayfinder), the review fan-out logic of the anthropics/claude-plugins-official `code-review` command (triage, scoped rules, parallel lenses, validate-then-filter, model tiering), plus the ponytail lazy ladder and caveman process skills. superpowers and disciplined-vibe-coding are MIT; the code-review command is Apache-2.0 and only its logic is reused, not its text.

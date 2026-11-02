@@ -4,7 +4,7 @@ Load only when the rung calls for a file. Delete sections that don't apply.
 
 ## Plan file (full rung and up)
 
-Path: `.claude/plans/NN-<slice>.md` at the repo root (`mkdir -p .claude/plans`).
+Path: `.claude/plans/NN-<slice>.md` at the repo root (`mkdir -p .claude/plans`). Keep it out of git per SKILL.md "Files this skill writes".
 
 ```markdown
 # Plan: <one-line goal>
@@ -50,7 +50,7 @@ Drift: <divergences, or "no drift">
 
 ## Session state (project rung)
 
-Path: `.claude/state.md` at the repo root. Append one line per stage exit. Read it first when resuming.
+Path: `.claude/state.md` at the repo root. Append one line per stage exit. The Gate reads it first when resuming. Keep it out of git per SKILL.md "Files this skill writes".
 
 ```markdown
 # State: <project>

@@ -5,27 +5,29 @@ A small, hand-checked map of an existing repo so every session starts oriented w
 ## When
 
 - **Build:** no `.claude/code-map.md` in the repo and the task touches existing code.
-- **Refresh:** the map's `at` commit is behind HEAD and `git diff --stat <at>..HEAD` adds or removes top-level dirs, entry points, or more than ~20% of files. Update only the sections that changed, then bump `at`.
+- **Refresh:** `git diff --name-status <at>..HEAD` adds, deletes, or renames top-level dirs or entry points, touches the files `Commands` came from (Makefile, scripts, CI config), or changes more than ~20% of files. Otherwise the map is fresh: print `map: pass - fresh at <at>`. Refresh only the changed sections, then bump `at`.
 - **Skip:** `graphify-out/` exists (query it instead), or the repo is under ~20 files (just read it).
 
 ## Build (≤10 tool calls; delegate to an Explore subagent if the repo has more than ~300 tracked files)
+
+Monorepo → map the root layout plus only the package(s) the task touches; add a section per package as later tasks reach it.
 
 Gather, using tracked files only:
 
 ```bash
 git ls-files | awk -F/ 'NF>1{print $1}' | sort | uniq -c | sort -rn | head -25            # top-level dirs by size
 git ls-files | sed -n 's/.*\.\([a-z0-9]*\)$/\1/p' | sort | uniq -c | sort -rn | head -8   # languages
-git log --since=6.months --name-only --format= | grep . | sort | uniq -c | sort -rn | head -15  # hot files
-git ls-files | grep -iE '(^|/)(main|app|server|index|cli|manage|wsgi|asgi)\.[a-z]+$|^cmd/|Dockerfile|docker-compose|Makefile|Justfile|package\.json|pyproject\.toml|go\.mod|Cargo\.toml|\.github/workflows/|Chart\.yaml|\.tf$' | head -40
+git log --since=6.months --name-only --format= | grep . | sort | uniq -c | sort -rn | while read n f; do test -e "$f" && echo "$n $f"; done | head -15  # hot files that still exist
+git ls-files | grep -iE '(^|/)(main|app|server|index|cli|manage|wsgi|asgi)\.(py|[jt]sx?|go|rb|rs|java|php)$|^cmd/|Dockerfile|docker-compose|Makefile|Justfile|package\.json|pyproject\.toml|go\.mod|Cargo\.toml|\.github/workflows/|\.gitlab-ci\.yml|Jenkinsfile|Chart\.yaml|kustomization\.ya?ml|(^|/)(main|versions)\.tf$' | awk -F/ '{print NF"\t"$0}' | sort -n | cut -f2- | head -40  # shallowest first
 ```
 
-Then read only: the build/task file (Makefile, `package.json` scripts, `pyproject.toml`), one CI workflow, the README's setup section, and each entry point's first ~40 lines. Hubs = the hot-files list, plus the few modules that `git grep -c` shows imported by many files. Trace one main request or job path from entry to storage.
+Then read only: the build/task file (Makefile, `package.json` scripts, `pyproject.toml`), the PR CI workflow(s) (record the required checks), the README's setup section, and each entry point's first ~40 lines. Hubs = the hot-files list, plus the few modules that `git grep -c` shows imported by many files. Trace one main request or job path from entry to storage.
 
 Never record secrets, credentials, hostnames from `.env`, or customer data.
 
 ## Write
 
-`mkdir -p .claude`, then write `.claude/code-map.md` in this shape, ≤80 lines, facts only, every path real. Name symbols (`Session.send`), never line numbers: they rot on the next commit. A command not read from a real file gets `(unverified)`.
+`mkdir -p .claude`, then write `.claude/code-map.md` in this shape, ≤80 lines, facts only. Every path is repo-relative from the root and tracked. Name symbols (`Session.send`), never line numbers: they rot on the next commit. A command not read from a real file gets `(unverified)`.
 
 ```markdown
 # Code map
@@ -35,7 +37,7 @@ at: <short sha> · <date> · refresh: code-better Gate
 <languages, frameworks, runtime versions, package manager>
 
 ## Commands
-build: `...` · test: `...` · single test: `...` · lint: `...` · run: `...`
+build: `...` · test: `...` · single test: `...` · lint: `...` · run: `...` · CI required checks: `...`
 
 ## Layout
 - `dir/` - <purpose, one line>
@@ -63,13 +65,21 @@ build: `...` · test: `...` · single test: `...` · lint: `...` · run: `...`
 
 Claude Code loads `CLAUDE.md` and `CLAUDE.local.md` at session start, and expands `@path` imports in them eagerly. So one import line makes the map load in every session.
 
-- **Personal (default, for shared or legacy repos):** add the line `@.claude/code-map.md` (plain text, not in a code span) to `CLAUDE.local.md`. Then keep both files out of git without touching the team's `.gitignore`: `mkdir -p .git/info` and append `CLAUDE.local.md`, `.claude/code-map.md`, `.claude/plans/`, and `.claude/state.md` to `.git/info/exclude` (skip lines already there).
-- **Team (only if the user says so):** put the import line in `CLAUDE.md` and commit the map with it.
+- **Personal (default, for shared or legacy repos):** add the line `@.claude/code-map.md` (plain text, not in a code span) to the repo-root `CLAUDE.local.md`. Keep the skill's files out of git without touching the team's `.gitignore`:
+
+```bash
+ex="$(git rev-parse --git-path info/exclude)"; mkdir -p "$(dirname "$ex")"; touch "$ex"
+for p in CLAUDE.local.md .claude/code-map.md .claude/plans/ .claude/state.md; do grep -qxF "$p" "$ex" || echo "$p" >> "$ex"; done
+```
+
+- **Team (only if the user says so):** remove the skill's lines from `$(git rev-parse --git-path info/exclude)` and the import from `CLAUDE.local.md`, then put the import line in `CLAUDE.md` and commit the map with it.
 
 Don't ask: default to personal and say in one line how to switch to team.
 
 ## Verify
 
-- Every path in the map exists: `test -e <path>` for each.
+- Every path in the map exists: `test -e <path>` from the repo root for each.
 - Every command was read from a real file (Makefile, scripts, CI), not guessed. Unverified commands get `(unverified)`.
-- `git status --short` shows neither file when personal.
+- `git status --short` shows none of the skill's files when personal.
+
+Exit: `map: pass - built at <sha>, 52 lines, personal`.

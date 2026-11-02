@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-Home of `code-better`, a single Claude Code skill that merges obra/superpowers and bmtrnavsky/disciplined-vibe-coding (plus the ponytail lazy ladder and caveman process skills) into one gated pipeline: Gate → Plan → Teardown → Build → Verify → Commit. No build, no dependencies.
+Home of `code-better`, a single Claude Code skill for large existing codebases that merges obra/superpowers and bmtrnavsky/disciplined-vibe-coding (plus the ponytail lazy ladder and caveman process skills) into one gated pipeline: Gate → Plan → Teardown → Build → Verify → Commit. No build, no dependencies.
 
 - `skills/code-better/SKILL.md` — the skill. Frontmatter `name` + `description` (≤1024 chars, starts with "Use when…", lists triggers only, never summarizes the workflow — Claude skips the body if the description reads like a summary).
 - `skills/code-better/references/templates.md` — `.claude/plans/NN-<slice>.md` and `.claude/state.md` formats, loaded only at full/project rung.
@@ -13,7 +13,7 @@ Home of `code-better`, a single Claude Code skill that merges obra/superpowers a
 ## Install / use
 
 ```bash
-ln -s "$PWD/skills/code-better" ~/.claude/skills/code-better   # global
+mkdir -p ~/.claude/skills && ln -sfn "$(git rev-parse --show-toplevel)/skills/code-better" ~/.claude/skills/code-better
 ```
 
 Start a fresh `claude` session; the skill appears as `code-better`. It overlaps the superpowers, caveman, and ponytail plugins — disable those (`/plugin`) when testing to avoid duplicate or conflicting instructions.
@@ -23,7 +23,8 @@ Start a fresh `claude` session; the skill appears as `code-better`. It overlaps 
 - Keep SKILL.md under ~250 lines; bulk formats go in `references/`. New material must replace or compress something, not just append.
 - Numbered sections are pipeline stages (Gate, Plan, Teardown, Build, Verify, Commit); Debug and Refactor live inside Build. The "Pick the entry" table and the tier/rung tables must stay in sync with section names.
 - User instructions (global `~/.claude/CLAUDE.md`) take priority over the skill; don't add rules that contradict them (terse output, never commit/push unless asked, no new deps without need).
-- Upstream sources live in `~/.claude/plugins/cache/` (`claude-plugins-official/superpowers/*/skills`, `caveman/caveman/*/skills`, `ponytail/ponytail/*/skills`); disciplined-vibe-coding is not installed, so clone https://github.com/bmtrnavsky/disciplined-vibe-coding (`skills/`, `plugins/disciplined-vibe-coding/`). Diff against them when pulling in updates.
+- Upstreams to diff against when pulling in updates: https://github.com/obra/superpowers (`skills/`), https://github.com/bmtrnavsky/disciplined-vibe-coding (`skills/`, `plugins/disciplined-vibe-coding/`), and the `code-review` command in https://github.com/anthropics/claude-plugins-official. If you adapt new upstream material, update `THIRD_PARTY_NOTICES.md`.
+- The skill targets large existing codebases: prefer rules that follow repo conventions, protect public surfaces, and keep exploration cheap.
 
 ## Checking a change
 
