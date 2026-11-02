@@ -10,7 +10,7 @@ A small, hand-checked map of an existing repo so every session starts oriented w
 
 ## Build (≤10 tool calls; delegate to an Explore subagent if the repo has more than ~300 tracked files)
 
-Monorepo → map the root layout plus only the package(s) the task touches; add a section per package as later tasks reach it.
+Monorepo, or more than ~2000 tracked files → map the root layout plus only the package or subtree the task touches; add a section per subtree as later tasks reach it.
 
 Gather, using tracked files only:
 

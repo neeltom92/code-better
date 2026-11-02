@@ -24,7 +24,7 @@ User instructions (CLAUDE.md, direct requests) override this skill.
 
 ## Gate rule
 
-Each stage exits with one line, in order: `map:` → `gate:` → (`debug:`) → `plan:` → `teardown/<round>:` → `build:` → `verify:` → `commit:`. Format: `<stage>: pass|fail - <reason>`; a stage the rung skips prints nothing. A failed gate blocks the next stage. The only way past a red gate without fixing it is an explicit user bypass, stated in chat as: who approved, what was red, why it was waived. A silent skip is a defect. Gates are fast checks, not ceremony: small work gets less process, never more.
+Each stage exits with one line, in order: `map:` → `gate:` → (`debug:`) → `plan:` → `teardown/<round>:` → `build:` → `verify:` → `commit:`. Format: `<stage>: pass|fail - <reason>`; a stage the rung or the user skips prints nothing. A failed gate blocks the next stage. The only way past a red gate without fixing it is an explicit user bypass, stated in chat as: who approved, what was red, why it was waived. A silent skip is a defect. Gates are fast checks, not ceremony: small work gets less process, never more.
 
 ## Pick the entry
 
@@ -65,15 +65,15 @@ Then declare: `gate: pass - tier=internal rung=micro, one component, reversible`
 | Rung | When | Plan | Teardown |
 |---|---|---|---|
 | one-liner | 1 logical edit (+ its test), reversible, no open questions | the chat line | skip |
-| micro | one component, reversible, no public-surface/schema change, no new dependency | 4 bullets | 2 passes, self |
-| full | crosses components, irreversible, new dependency, public-surface/schema change, or a map hub/danger zone | plan file | 5 rounds, fresh subagent |
+| micro | one component, reversible, additive-only public change, no schema change, no new dependency | 4 bullets | 2 passes, self |
+| full | crosses components, irreversible, new dependency, breaking public-surface or schema change, or a map hub/danger zone | plan file | 5 rounds, fresh subagent |
 | project | spans sessions, milestones | plan per milestone + state file | 5 rounds per milestone |
 
-**Step-up rule:** when blast radius grows mid-work (new component, public-surface change, new dependency, irreversible or prod touch), declare the higher rung and backfill its missing artifacts before continuing. Prod touches need user confirmation now. A rung never steps down mid-build. Prod tier is never a one-liner.
+**Step-up rule:** when blast radius grows mid-work (new component, breaking public-surface change, new dependency, irreversible or prod touch), declare the higher rung and backfill its missing artifacts before continuing. Prod touches need user confirmation now. A rung never steps down mid-build. Prod tier is never a one-liner.
 
 ## 2. Plan
 
-Existing pattern covers it → follow it, no alternatives. Real design choices → 2-3 approaches with trade-offs, simplest first, recommend one. Get approval before building when the change spans components, adds a dependency, changes a schema or public surface, or is prod tier. Too big → split into shippable slices; plan the first.
+Existing pattern covers it → follow it, no alternatives. Real design choices → 2-3 approaches with trade-offs, simplest first, recommend one. Get approval before building when the change spans components, adds a dependency, changes a schema or breaks a public surface, or is prod tier. Too big → split into shippable slices; plan the first.
 
 Every plan, at any rung, names (the 4 bullets at micro):
 
@@ -91,7 +91,7 @@ Add when relevant:
 - **Metric band** for nondeterministic checks: `p95 < 200ms`, `F1 >= 0.82, seed 42`. Not a bare boolean.
 - **Kill-switch** for anything that runs unsupervised (bots, cron, daemons, autoscalers): the decision policy is config, and the off switch exists before the code.
 
-Full rung and up: write the plan to `.claude/plans/` (format in `references/templates.md`). Below that, keep it in chat. Exit: `plan: pass - 4 steps, rollback: git revert`.
+Full rung and up: write the plan to `.claude/plans/NN-<slice>.md`, `NN` = next free two-digit number (format in `references/templates.md`). Below that, keep it in chat. Exit: `plan: pass - 4 steps, rollback: git revert`.
 
 ## 3. Teardown: cold review before code
 
@@ -127,7 +127,7 @@ Stop at the first rung that holds:
 
 ### Test first (red → green → refactor)
 
-0. **Baseline:** before the first edit, run the tests for the area you'll touch. Already red on clean HEAD → pre-existing: record it, don't fix it unless in scope.
+0. **Baseline:** before the first edit, run the whole test module or package you'll touch. Already red on clean HEAD → pre-existing: record it, don't fix it unless in scope.
 1. Smallest test for one behavior. Run it. Watch it fail for the expected reason. Fails for another reason (import, typo) → fix that and re-run. Passes already → wrong test, unless it is a characterization check pinning current behavior.
 2. Minimum code to pass. Run it. Green, with no other tests broken. Refactor with tests green. Repeat.
 
@@ -184,7 +184,7 @@ Prod restarts, rollbacks, and data fixes need user approval first.
 
 Before any "done / fixed / passing" claim:
 
-1. Name the command that proves each acceptance criterion. Run it fresh: targeted tests while building; before claiming done, the affected package's suite plus the repo's CI checks for changed paths (lint, format, typecheck, `terraform validate`, `helm lint`, codegen drift; read them from the CI config). Whole-repo suite only if cheap.
+1. Name the command that proves each acceptance criterion. Run it fresh: targeted tests while building; before claiming done, the affected package's suite plus the repo's CI checks for changed paths (lint, format, typecheck, `terraform validate`, `helm lint`, codegen drift; read them from the CI config). Whole-repo suite only if cheap. Check tool missing → run it isolated (`uvx`, `npx`, `go run`) or report it as not run; never install into the project's env without asking.
 2. Read all output: exit code, failure count, warnings, skipped tests (skipped = not passed). Red that matches the baseline → pre-existing, report it. Flaky → report both results; never rerun until green.
 3. Classify evidence: **terminal** (run this turn), **user-attested** (labeled, never simulated), **integrity** (counts, checksums, dry-run vs live: exit 0 with wrong numbers = FAIL), **metric** (observed value against its band).
 4. Near-miss is a fail: `0.819 vs 0.82` goes to the user, not rounded up.
@@ -218,7 +218,7 @@ Use them for an independent read (no shared context) or for parallel work with n
 
 **Review fan-out:**
 
-1. **Triage** (cheap): stop if the change is trivial, already reviewed, or not ready. Prod tier is never trivial.
+1. **Triage** (cheap; skip for a diff you just wrote): stop if the change is trivial, already reviewed, or not ready. Prod tier is never trivial.
 2. **Scope the rules:** list the CLAUDE.md files at the root and in parent dirs of changed files. A rule only applies to files under it.
 3. **Parallel reviewers**, one lens each: rule compliance (quote the rule), bugs visible in the diff alone, defects in the introduced code (logic, security, compat). Prod tier: two reviewers per lens, and the defect lens may read outside the diff to check rollback, rerun-safety, auth, and locking.
 4. **High signal only:** won't compile or parse, wrong for every input, or an in-scope rule clearly broken. Never flag: style, pre-existing issues, linter-catchable issues, nitpicks, rules silenced in code, or input-dependent maybes (prod tier: flag them if a concrete input breaks it).
@@ -227,7 +227,7 @@ Use them for an independent read (no shared context) or for parallel work with n
 
 ## Files this skill writes
 
-`.claude/code-map.md`, `.claude/plans/`, `.claude/state.md` (project rung: one line per stage exit with gate result and next step), all under the repo root, plus one `@.claude/code-map.md` line in the repo-root `CLAUDE.local.md`. Keep all four out of git unless the user wants them shared: append each to `$(git rev-parse --git-path info/exclude)` (works in worktrees; skip lines already there).
+`.claude/code-map.md`, `.claude/plans/`, `.claude/state.md` (project rung: one line per stage exit with gate result and next step), all under the repo root, plus one `@.claude/code-map.md` line in the repo-root `CLAUDE.local.md`. Keep all four out of git unless the user wants them shared: append each to `$(git rev-parse --git-path info/exclude)` (works in worktrees; `mkdir -p` its dir first; skip lines already there).
 
 ## Output
 
