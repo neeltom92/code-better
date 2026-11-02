@@ -36,7 +36,7 @@ In any repo, invoke it directly or let it trigger on coding tasks:
 /code-better CI is failing on the integration job since yesterday
 ```
 
-At `full` and `project` rung it writes plans and session state under `.pipeline/` (formats in `skills/code-better/references/templates.md`). Commit that directory or add it to `.gitignore`.
+Everything it writes lives under the target repo's root `.claude/`: `code-map.md`, `plans/NN-<slice>.md` (full and project rung), and `state.md` (project rung). Formats are in `skills/code-better/references/`. These files stay out of git through `.git/info/exclude` by default; commit them if you want them shared with your team.
 
 ## Layout
 

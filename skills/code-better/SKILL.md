@@ -223,7 +223,7 @@ Use them for an independent read (no shared context) or for parallel work with n
 
 ## Session state (project rung only)
 
-Keep `.pipeline/state.md`: one line per stage exit with the gate result and the next step, so a new session resumes without a re-brief. Format in `references/templates.md`. Ask whether `.pipeline/` should be committed or gitignored.
+Keep `.claude/state.md`: one line per stage exit with the gate result and the next step, so a new session resumes without a re-brief. Format in `references/templates.md`. Everything this skill writes lives under the repo-root `.claude/` (`code-map.md`, `plans/`, `state.md`) and stays out of git via `.git/info/exclude` unless the user wants it shared.
 
 ## Output
 

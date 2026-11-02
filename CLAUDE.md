@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Home of `code-better`, a single Claude Code skill that merges obra/superpowers and bmtrnavsky/disciplined-vibe-coding (plus the ponytail lazy ladder and caveman process skills) into one gated pipeline: Gate → Plan → Teardown → Build → Verify → Commit. No build, no dependencies.
 
 - `skills/code-better/SKILL.md` — the skill. Frontmatter `name` + `description` (≤1024 chars, starts with "Use when…", lists triggers only, never summarizes the workflow — Claude skips the body if the description reads like a summary).
-- `skills/code-better/references/templates.md` — plan-file and `.pipeline/state.md` formats, loaded only at full/project rung.
+- `skills/code-better/references/templates.md` — `.claude/plans/NN-<slice>.md` and `.claude/state.md` formats, loaded only at full/project rung.
 - `skills/code-better/references/code-map.md` — how the Gate builds/refreshes a ≤80-line `.claude/code-map.md` in target repos and imports it via `CLAUDE.local.md` (graphify-lite, no install).
 
 ## Install / use

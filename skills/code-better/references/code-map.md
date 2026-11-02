@@ -63,7 +63,7 @@ build: `...` · test: `...` · single test: `...` · lint: `...` · run: `...`
 
 Claude Code loads `CLAUDE.md` and `CLAUDE.local.md` at session start, and expands `@path` imports in them eagerly. So one import line makes the map load in every session.
 
-- **Personal (default, for shared or legacy repos):** add the line `@.claude/code-map.md` (plain text, not in a code span) to `CLAUDE.local.md`. Then keep both files out of git without touching the team's `.gitignore`: `mkdir -p .git/info` and append `CLAUDE.local.md` and `.claude/code-map.md` to `.git/info/exclude`.
+- **Personal (default, for shared or legacy repos):** add the line `@.claude/code-map.md` (plain text, not in a code span) to `CLAUDE.local.md`. Then keep both files out of git without touching the team's `.gitignore`: `mkdir -p .git/info` and append `CLAUDE.local.md`, `.claude/code-map.md`, `.claude/plans/`, and `.claude/state.md` to `.git/info/exclude` (skip lines already there).
 - **Team (only if the user says so):** put the import line in `CLAUDE.md` and commit the map with it.
 
 Don't ask: default to personal and say in one line how to switch to team.

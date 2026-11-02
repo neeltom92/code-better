@@ -4,7 +4,7 @@ Load only when the rung calls for a file. Delete sections that don't apply.
 
 ## Plan file (full rung and up)
 
-Path: `.pipeline/plans/NN-<slice>.md`, or wherever the repo keeps design docs.
+Path: `.claude/plans/NN-<slice>.md` at the repo root (`mkdir -p .claude/plans`).
 
 ```markdown
 # Plan: <one-line goal>
@@ -50,7 +50,7 @@ Drift: <divergences, or "no drift">
 
 ## Session state (project rung)
 
-Path: `.pipeline/state.md`. Append one line per stage exit. Read it first when resuming.
+Path: `.claude/state.md` at the repo root. Append one line per stage exit. Read it first when resuming.
 
 ```markdown
 # State: <project>
