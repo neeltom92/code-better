@@ -17,7 +17,7 @@ Gather, using tracked files only:
 ```bash
 git ls-files | awk -F/ 'NF>1{print $1}' | sort | uniq -c | sort -rn | head -25            # top-level dirs by size
 git ls-files | sed -n 's/.*\.\([a-z0-9]*\)$/\1/p' | sort | uniq -c | sort -rn | head -8   # languages
-git log --since=6.months --name-only --format= | grep . | sort | uniq -c | sort -rn | while read n f; do test -e "$f" && echo "$n $f"; done | head -15  # hot files that still exist
+git log --since=6.months --max-count=2000 --name-only --format= | grep . | sort | uniq -c | sort -rn | while read n f; do test -e "$f" && echo "$n $f"; done | head -15  # hot files that still exist
 git ls-files | grep -iE '(^|/)(main|app|server|index|cli|manage|wsgi|asgi)\.(py|[jt]sx?|go|rb|rs|java|php)$|^cmd/|Dockerfile|docker-compose|Makefile|Justfile|package\.json|pyproject\.toml|go\.mod|Cargo\.toml|\.github/workflows/|\.gitlab-ci\.yml|Jenkinsfile|Chart\.yaml|kustomization\.ya?ml|(^|/)(main|versions)\.tf$' | awk -F/ '{print NF"\t"$0}' | sort -n | cut -f2- | head -40  # shallowest first
 ```
 

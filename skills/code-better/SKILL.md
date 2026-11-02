@@ -184,7 +184,7 @@ Prod restarts, rollbacks, and data fixes need user approval first.
 
 Before any "done / fixed / passing" claim:
 
-1. Name the command that proves each acceptance criterion. Run it fresh: targeted tests while building; before claiming done, the affected package's suite plus the repo's CI checks for changed paths (lint, format, typecheck, `terraform validate`, `helm lint`, codegen drift; read them from the CI config). Whole-repo suite only if cheap. Check tool missing → run it isolated (`uvx`, `npx`, `go run`) or report it as not run; never install into the project's env without asking.
+1. Name the command that proves each acceptance criterion. Run it fresh: targeted tests while building; before claiming done, the affected package's suite plus the repo's CI checks for changed paths (lint, format, typecheck, `terraform validate`, `helm lint`, codegen drift; read them from the CI config). Whole-repo suite only if cheap. Check tool missing → run it isolated (`uvx`, `npx`, `go run`) at the version the repo pins (pre-commit config, lockfile), or report it as not run; never install into the project's env without asking.
 2. Read all output: exit code, failure count, warnings, skipped tests (skipped = not passed). Red that matches the baseline → pre-existing, report it. Flaky → report both results; never rerun until green.
 3. Classify evidence: **terminal** (run this turn), **user-attested** (labeled, never simulated), **integrity** (counts, checksums, dry-run vs live: exit 0 with wrong numbers = FAIL), **metric** (observed value against its band).
 4. Near-miss is a fail: `0.819 vs 0.82` goes to the user, not rounded up.
