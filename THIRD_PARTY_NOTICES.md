@@ -12,6 +12,7 @@ Ideas only, no text copied:
 
 - The review fan-out follows the logic of the `code-review` command in [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) (Apache-2.0): triage, scoped rules, parallel single-lens reviewers, validate-then-filter, model choice by job.
 - Process ideas from the caveman Claude Code plugin's investigate-first, surgical-patch, safe-refactor, and verify-and-stop skills.
+- Harness design principles from Marmelab, [The State of AI Harness Engineering 2026](https://marmelab.com/blog/2026/09/24/the-state-of-ai-harness-engineering-2026.html): replace rules with scripts, test each guard both ways, log usage, name the incident behind each control.
 
 ## MIT License (applies to each project in the table, with its copyright line above)
 

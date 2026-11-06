@@ -5,13 +5,11 @@ description: Use when writing, changing, fixing, refactoring, or reviewing code 
 
 # Code Better
 
-One pipeline for all coding work, built for large existing codebases. Same stages every time; ceremony scales with risk.
+One pipeline for all coding work, built for large existing codebases. Same stages every time; ceremony scales with risk. User instructions (CLAUDE.md, direct requests) override this skill.
 
 ```text
 Gate --> Plan --> Teardown --> Build (test-first, debug) --> Verify --> Commit
 ```
-
-User instructions (CLAUDE.md, direct requests) override this skill.
 
 ## Iron laws
 
@@ -24,7 +22,16 @@ User instructions (CLAUDE.md, direct requests) override this skill.
 
 ## Gate rule
 
-Each stage exits with one line, in order: `map:` → `gate:` → (`debug:`) → `plan:` → `teardown/<round>:` → `build:` → `verify:` → `commit:`. Format: `<stage>: pass|fail - <reason>`; a stage the rung or the user skips prints nothing. A failed gate blocks the next stage. The only way past a red gate without fixing it is an explicit user bypass, stated in chat as: who approved, what was red, why it was waived. A silent skip is a defect. Gates are fast checks, not ceremony: small work gets less process, never more.
+Each stage exits with one line, in order: `map:` → `gate:` → (`debug:`) → `plan:` → `teardown/<round>:` → `build:` → `verify:` → `commit:`. Format: `<stage>: pass|fail - <reason>`; a stage the rung or the user skips prints nothing. A failed gate blocks the next stage. The only way past a red gate without fixing it is an explicit user bypass, stated in chat as: who approved, what was red, why it was waived. A silent skip is a defect. Gates are fast checks, not ceremony: small work gets less process, never more. Print each line as plain text in exactly this form (or, if your output style forbids text between tool calls, as its own `echo "gate: pass - ..."` Bash call): the harness reads them.
+
+## Harness (enforced by hooks)
+
+Installed as a plugin, or with `hooks/guard.py` wired into settings, the gates are checked from your transcript and from the git working tree, so a file changed by Bash counts the same as one changed by Edit:
+
+- No file change before `gate: pass`; at full/project rung, none before `plan: pass` and `teardown/readiness: pass` either.
+- No `git commit`, and no ending the turn, with files changed after the last `verify:` line (commit needs `verify: pass`).
+- No force push, `git reset --hard`, `git clean -f`, or `terraform apply` without a saved plan file.
+- A block names what is missing: produce that. Never route around it with another tool or a rephrased command. `<stage>: bypass - <why>` passes only after a user message starts with "bypass". Off switch: `CODE_BETTER_GUARD=off`. Decision log: `$(git rev-parse --git-path code-better)/harness.log`.
 
 ## Pick the entry
 
@@ -129,15 +136,12 @@ Stop at the first rung that holds:
 
 0. **Baseline:** before the first edit, run the whole test module or package you'll touch. Already red on clean HEAD → pre-existing: record it, don't fix it unless in scope.
 1. Smallest test for one behavior. Run it. Watch it fail for the expected reason. Fails for another reason (import, typo) → fix that and re-run. Passes already → wrong test, unless it is a characterization check pinning current behavior.
-2. Minimum code to pass. Run it. Green, with no other tests broken. Refactor with tests green. Repeat.
-
-Wrote code before the test? Delete it and start from the test. Don't keep it "as reference".
+2. Minimum code to pass. Run it. Green, with no other tests broken. Refactor with tests green. Repeat. Wrote code before the test? Delete it and start from the test; don't keep it "as reference".
 
 - No tests near the change → first pin current behavior at the nearest existing seam (CLI, HTTP, job entry, public function) with the repo's runner. Don't refactor for testability inside a fix or feature. Trivial one-liners need none.
 - State exceptions: throwaway prototypes, generated code, pure config. Verify those by running them.
 - **Infra: the failing check is the plan or diff.** Offline first: `terraform fmt -check`, `terraform init -backend=false && terraform validate`, `helm template` / `helm lint`, `actionlint`. Live diffs (`terraform plan -out=tfplan`, `helm diff`, `kubectl diff`) only via the repo's own path (Makefile, Atlantis, CI) or after confirming backend, workspace, and `kubectl config current-context`. No `init -upgrade`, `state`, or `apply` without approval.
-
-Exit: `build: pass - red→green, 3 files`.
+- Exit: `build: pass - red→green, 3 files`.
 
 ### Debug (anything broken, during Build or as the entry)
 
@@ -170,15 +174,13 @@ Never: delete or weaken tests, suppress errors, add sleeps or silent fallbacks, 
 
 ## Rollback (applies at every stage)
 
-Before any destructive or irreversible step, have the undo ready and tested where possible:
+Before any destructive or irreversible step, have the undo ready and tested where possible. Prod restarts, rollbacks, and data fixes need user approval first.
 
 - **Code:** work on a branch or `git worktree` (verify the worktree dir is gitignored). Shared history → `git revert <sha>`, never `reset --hard` or force-push.
 - **Infra:** `terraform plan -out=tfplan` and apply that exact plan; know the previous state version. `helm rollback <release> <rev>`. `kubectl rollout undo deploy/<name>`.
 - **Data/schema:** new migration via the repo's tool; never edit an applied one. Backup or snapshot first, then a down-migration, or expand → migrate → contract so old and new code both run mid-deploy. Verify row counts and checksums on both sides.
 - **Flags:** risky prod-tier behavior ships behind the repo's existing flag or config mechanism (never a new one), default off. This is the one flag Scope allows; the plan names its removal step.
 - **Abort criteria:** name the signal that triggers rollback (error rate, failed health check, mismatched counts) before you start.
-
-Prod restarts, rollbacks, and data fixes need user approval first.
 
 ## 5. Verify
 
@@ -204,9 +206,7 @@ Never commit or push unless the user asks. When asked:
 
 ## Review
 
-**Receiving feedback:** read all of it first; ask about unclear items before implementing any. Verify each claim against the code; reviewers can be wrong. Push back with technical reasons when a suggestion breaks behavior, adds unused features, or conflicts with the user's decisions. No performative agreement. Order: blocking → simple → complex; test each.
-
-**Requesting review:** micro and below → self-review the diff. Full rung and up, prod tier, or a PR → review fan-out (Subagents).
+**Receiving feedback:** read all of it first; ask about unclear items before implementing any. Verify each claim against the code; reviewers can be wrong. Push back with technical reasons when a suggestion breaks behavior, adds unused features, or conflicts with the user's decisions. No performative agreement. Order: blocking → simple → complex; test each. **Requesting review:** micro and below → self-review the diff. Full rung and up, prod tier, or a PR → review fan-out (Subagents).
 
 ## Subagents
 
@@ -247,3 +247,4 @@ Use them for an independent read (no shared context) or for parallel work with n
 | "I'll add it now, we'll need it" / "while I'm here" | YAGNI. Out of scope: mention it, don't do it. |
 | "One more fix attempt" (after 2) | Stop. Report and let the user choose. |
 | "The reviewer / subagent says it's fine" | Verify against the code and the diff. |
+| "The hook is wrong, I'll do it via Bash" | Produce the missing stage line, or ask the user to bypass. |

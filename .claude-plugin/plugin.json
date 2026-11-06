@@ -1,0 +1,10 @@
+{
+  "name": "code-better",
+  "version": "1.0.0",
+  "description": "Gated coding harness for large existing codebases: Gate, Plan, Teardown, Build, Verify, Commit, with hook-enforced gates and rollback guards.",
+  "author": { "name": "Neel Thomas" },
+  "homepage": "https://github.com/neeltom92/code-better",
+  "repository": "https://github.com/neeltom92/code-better",
+  "license": "MIT",
+  "keywords": ["harness", "workflow", "tdd", "debugging", "code-review", "terraform", "kubernetes"]
+}

@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Guard tests (must block / must allow)
+        run: python3 -m unittest discover -s tests -v
+      - name: Skill frontmatter and size
+        run: |
+          f=skills/code-better/SKILL.md
+          head -4 "$f" | grep -q '^name: code-better$'
+          len=$(awk '/^description:/{print length($0)-13}' "$f"); echo "description: $len chars"; [ "$len" -le 1024 ]
+          lines=$(wc -l < "$f"); echo "SKILL.md: $lines lines"; [ "$lines" -le 250 ]
+      - name: Manifests parse and versions match
+        run: |
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json skills/code-better/hooks/settings.json; do
+            python3 -m json.tool "$f" > /dev/null
+          done
+          v=$(python3 -c "import json;print(json.load(open('.claude-plugin/plugin.json'))['version'])")
+          grep -q "^## \[$v\]" CHANGELOG.md || { echo "CHANGELOG.md has no entry for $v"; exit 1; }

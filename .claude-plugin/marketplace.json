@@ -1,0 +1,15 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "code-better",
+  "description": "code-better: a gated coding harness for large existing codebases.",
+  "owner": {
+    "name": "Neel Thomas"
+  },
+  "plugins": [
+    {
+      "name": "code-better",
+      "source": "./",
+      "description": "Gated coding harness for large existing codebases, with hook-enforced gates and rollback guards."
+    }
+  ]
+}
