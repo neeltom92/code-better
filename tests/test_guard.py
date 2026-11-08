@@ -95,8 +95,21 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(self.rule(self.edit_event(t)), "G1")
 
     def test_skill_owned_files_exempt(self):
-        for rel in (".claude/code-map.md", ".claude/plans/01-x.md", ".claude/state.md", "CLAUDE.local.md"):
+        for rel in (".claude/code-map.md", ".claude/plans/01-x.md", ".claude/plans/01-x-questions.md",
+                    ".claude/state.md", ".claude/audit.md", "CLAUDE.local.md"):
             self.assertIsNone(self.edit_event([skill_load()], rel), rel)
+
+    def test_lookalike_record_files_guarded(self):
+        for rel in (".claude/audit.md.bak", ".claude/audit/x.md", "audit.md"):
+            self.assertEqual(self.rule(self.edit_event([skill_load()], rel)), "G1", rel)
+
+    def test_gate_with_scope_but_no_rung_blocks(self):
+        t = [skill_load(), say("gate: pass - scope=bugfix tier=prod - one component")]
+        self.assertEqual(self.rule(self.edit_event(t)), "G1")
+
+    def test_gate_with_scope_allows_edit(self):
+        t = [skill_load(), say("gate: pass - scope=bugfix tier=prod rung=micro - one component")]
+        self.assertIsNone(self.edit_event(t))
 
     def test_other_claude_files_guarded(self):
         self.assertEqual(self.rule(self.edit_event([skill_load()], ".claude/settings.json")), "G1")
@@ -227,9 +240,38 @@ class GuardTest(unittest.TestCase):
                     "git push origin feat && rm -rf build", "helm lint chart"):
             self.assertIsNone(self.bash_event(self.gated() + [say("verify: pass - ok")], cmd), cmd)
 
-    def test_irreversible_with_user_bypass_allowed(self):
+    def test_irreversible_has_no_bypass(self):
+        # Hand-off (SKILL.md section 6): the user runs these, so no user word unlocks them for the agent.
         t = [skill_load(), user("yes force push it\nbypass")]
-        self.assertIsNone(self.bash_event(t, "git push --force"))
+        self.assertEqual(self.rule(self.bash_event(t, "git push --force")), "G5")
+
+    def test_terraform_destroy_blocked_even_after_verify(self):
+        for cmd in ("terraform destroy", "terraform destroy -auto-approve", "tofu -chdir=infra destroy",
+                    "terragrunt run-all destroy"):
+            self.assertEqual(self.rule(self.bash_event(self.gated() + [say("verify: pass - ok")], cmd)), "G5", cmd)
+
+    def test_destroy_plan_and_mentions_allowed(self):
+        for cmd in ("terraform plan -destroy -out=tfplan", "grep -rn destroy infra/", 'rg -n "terraform destroy" .github/',
+                    "echo 'run: terraform destroy'"):
+            self.assertIsNone(self.bash_event(self.gated() + [say("verify: pass - ok")], cmd), cmd)
+
+    def test_bypass_in_message_that_loads_skill_counts(self):
+        t = [user("bypass - prod is down, skip the plan"), skill_load(), say("gate: bypass - no plan, waived by user: outage")]
+        self.assertIsNone(self.edit_event(t))
+        t = [user("fix it"), skill_load(), say("gate: bypass - no plan")]
+        self.assertEqual(self.rule(self.edit_event(t)), "G1")
+
+    def test_gate_line_in_backticks_or_caps_keeps_rung(self):
+        for line in ("`gate: pass` - scope=bugfix tier=internal rung=micro - x",
+                     "Gate: PASS - scope=bugfix tier=internal rung=Micro - x"):
+            self.assertIsNone(self.edit_event([skill_load(), say(line)]), line)
+        self.assertEqual(self.rule(self.edit_event([skill_load(), say("gate: pass - tier=prod rung=FULL - x")])), "G2")
+
+    def test_no_git_refused_edit_is_not_a_change_before_the_gate(self):
+        t = [skill_load(), say("gate: pass - scope=feature tier=internal rung=full - x"),
+             edit(os.path.join(self.root, "app.py"))]
+        # ponytail: outside git the guard only sees Edit calls, so a refused one can still cost one G4 at Stop.
+        self.assertNotIn(self.rule(self.run_hook(t, hook_event_name="Stop")), ("G1", "G2"))
 
     # --- G4 stop ---
     def test_stop_with_unverified_edit_blocked(self):
@@ -412,6 +454,41 @@ class GitSensorTest(unittest.TestCase):
         self.assertIsNone(self.bash())
         self.assertIsNone(self.hook(hook_event_name="Stop"))
         self.assertIsNone(self.bash("git commit --allow-empty -m x"))
+
+    def test_stale_temp_index_cleaned(self):
+        state = os.path.join(self.root, ".git", "code-better")
+        os.makedirs(state, exist_ok=True)
+        stale = os.path.join(state, "index.99999")
+        with open(stale, "w") as f:
+            f.write("x")
+        os.utime(stale, (0, 0))
+        live = os.path.join(state, "index.%d" % os.getppid())  # a parallel hook still using its index
+        with open(live, "w") as f:
+            f.write("x")
+        os.utime(live, (0, 0))  # copy2 keeps the real index's old mtime
+        lock = os.path.join(state, "index.%d.lock" % os.getppid())  # git's lock beside a live temp index
+        with open(lock, "w") as f:
+            f.write("x")
+        self.assertIsNone(self.bash())
+        self.assertFalse(os.path.exists(stale))
+        self.assertTrue(os.path.exists(live))
+        self.assertTrue(os.path.exists(lock))
+
+    def test_loopback_to_full_rung_after_verified_build_can_stop(self):
+        self.entries += [say("gate: pass - scope=bugfix tier=internal rung=micro - x")]
+        self.assertIsNone(self.bash())
+        self.write("app.py", "x = 2\n")
+        self.assertIsNone(self.bash("python3 -m pytest"))
+        self.entries += [say("verify: fail - 2nd fix still red"), say("gate: pass - scope=bugfix tier=internal rung=full - loopback")]
+        self.assertIsNone(self.hook(hook_event_name="Stop"))  # plan-approval checkpoint stop
+        self.write("app.py", "x = 3\n")
+        self.assertEqual(self.hook(hook_event_name="Stop"), "G2")  # new change before the plan
+
+    def test_verify_line_before_any_gate_does_not_hide_changes(self):
+        self.assertIsNone(self.bash())
+        self.write("app.py", "x = 2\n")                      # e.g. `make fmt` before the gate
+        self.entries += [say("verify: fail - baseline red")]
+        self.assertEqual(self.bash("make test"), "G1")
 
     def test_real_index_untouched_and_log_written(self):
         self.write("app.py", "x = 9\n")

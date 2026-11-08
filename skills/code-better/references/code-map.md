@@ -69,10 +69,10 @@ Claude Code loads `CLAUDE.md` and `CLAUDE.local.md` at session start, and expand
 
 ```bash
 ex="$(git rev-parse --git-path info/exclude)"; mkdir -p "$(dirname "$ex")"; touch "$ex"
-for p in CLAUDE.local.md .claude/code-map.md .claude/plans/ .claude/state.md; do grep -qxF "$p" "$ex" || echo "$p" >> "$ex"; done
+for p in CLAUDE.local.md .claude/code-map.md .claude/plans/ .claude/state.md .claude/audit.md; do grep -qxF "$p" "$ex" || echo "$p" >> "$ex"; done
 ```
 
-- **Team (only if the user says so):** remove the skill's lines from `$(git rev-parse --git-path info/exclude)` and the import from `CLAUDE.local.md`, then put the import line in `CLAUDE.md` and commit the map with it.
+- **Team (only if the user says so):** remove the skill's lines from `$(git rev-parse --git-path info/exclude)` and the import from `CLAUDE.local.md`, then put the import line in `CLAUDE.md`, and hand the user the commit command for the map and that line.
 
 Don't ask: default to personal and say in one line how to switch to team.
 

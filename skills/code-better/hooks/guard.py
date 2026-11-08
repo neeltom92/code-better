@@ -19,18 +19,27 @@ stops happening (the decision log shows how often each one fires).
   G3 commit-unverified   `git commit` with files changed after the last `verify: pass`.
   G4 stop-unverified     Ending the turn with files changed after the last `verify:` line.
   G5 irreversible        force push (incl. `+refspec`), `git reset --hard`, `git clean -f`, and
-                         `terraform|tofu|terragrunt apply` without a saved plan file: no rollback.
+                         `terraform|tofu|terragrunt apply` without a saved plan file, and
+                         `destroy` (added with the 2.0.0 Hand-off: a review reproduced it passing): no rollback.
 
-Bypass: a stage printed as `<stage>: bypass - <why>` counts as pass only when a line of a
-human message in this session starts with "bypass". G5 is bypassed the same way.
+Bypass: a stage printed as `<stage>: bypass - <what was red>, waived by user: <why>` counts as pass only when a line of a
+human message in this session (or the message that loaded the skill) starts with "bypass".
+G5 has no bypass since 2.0.0: under the Hand-off rule the user runs those commands.
 Kill-switch: CODE_BETTER_GUARD=off disables every check.
 State and decision log live in `$(git rev-parse --git-path code-better)/`: never
 committed, nothing to gitignore. Outside git, it falls back to Edit/Write tool calls.
+
+Known gaps (accepted; the skill's hand-off rule covers them): `git checkout -- .` and
+`git restore` stay allowed so a block can never deadlock; changes inside submodules and
+tracked `.claude/` config are not sensed; commands are matched by regex, not a shell parser;
+a `rung=` inside backticks in the gate line is not read (the block message asks for it);
+outside git, an Edit the guard refused can still cost one G4 at Stop.
 
 Stdlib only. Any internal error fails open (allow) and prints to stderr, so a guard
 bug never bricks a session.
 """
 import datetime
+import glob
 import json
 import os
 import re
@@ -42,9 +51,9 @@ import time
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 SKILL_LOADED = re.compile(r"Base directory for this skill: \S*/code-better(?=\s|$)")  # not code-better-*
 # Tolerates `gate: pass`, **gate:** pass, `Gate: PASS`; normalized to lowercase.
-STAGE = re.compile(r"\b(gate|plan|verify|teardown/[a-z-]+)\**\s*:\s*\**\s*(pass|fail|bypass)\b([^\n`]*)", re.I)
+STAGE = re.compile(r"\b(gate|plan|verify|teardown/[a-z-]+)\**\s*:\s*\**\s*(pass|fail|bypass)\b[`*]*([^\n`]*)", re.I)
 REMINDER = re.compile(r"<(system-reminder|local-command-stdout)>.*?</\1>", re.S)
-RUNG = re.compile(r"\brung=([a-z-]+)")
+RUNG = re.compile(r"\brung=([a-z-]+)", re.I)
 # "bypass" must start a line of a human message, so "don't bypass the gate" never counts.
 USER_BYPASS = re.compile(r"^\s*bypass\b", re.I | re.M)
 TAG = re.compile(r"<[^>\n]+>")
@@ -66,12 +75,13 @@ UNSENSED = ("CLAUDE.local.md", ".claude",
             # ponytail: fixed list; extend when another cache shows up in a G1 block.
             "*__pycache__*", "*.pyc", "*.pytest_cache*", "*.mypy_cache*", "*.ruff_cache*",
             "*.coverage", "*.tox/*", "*node_modules*", "*.eslintcache", "*.tsbuildinfo")
-EXEMPT = re.compile(r"^(CLAUDE\.local\.md|\.claude/(code-map\.md|state\.md|plans/.*))$")
+EXEMPT = re.compile(r"^(CLAUDE\.local\.md|\.claude/(code-map\.md|state\.md|audit\.md|plans/.*))$")
 
 GIT_COMMIT = re.compile(r"\bgit\b(\s+(-[Cc]\s+\S+|--\S+))*\s+commit\b")
 FORCE_PUSH = re.compile(r"\bgit\b.*\bpush\b.*(\s--force(?!-with-lease|-if-includes)\b|\s-[A-Za-z]*f[A-Za-z]*\b|\s\+[^\s+])")
 RESET_HARD = re.compile(r"\bgit\b.*\breset\b.*\s--hard\b")
 CLEAN_FORCE = re.compile(r"\bgit\b.*\bclean\b.*(\s-[A-Za-z]*f|\s--force\b)")
+TF_DESTROY = re.compile(r"\b(terraform|tofu|terragrunt)\b(\s+-chdir=\S+)?(\s+run-all|\s+run\s+--all)?\s+destroy\b")
 TF_APPLY = re.compile(r"\b(terraform|tofu|terragrunt)\b(\s+-chdir=\S+)?(\s+run-all|\s+run\s+--all)?\s+apply\b(?P<args>.*)")
 RETRY_SLEEP = 0.4  # seconds between transcript re-reads before a stage-line deny
 TF_VALUE_FLAGS = {"-var", "-var-file", "-target", "-replace", "-parallelism", "-lock-timeout", "-state", "-state-out", "-backup"}
@@ -85,7 +95,7 @@ def read_events(transcript_path):
     ponytail: reads the whole transcript on every call; fine to tens of MB.
     Track a byte offset per session if hook latency ever shows up.
     """
-    events, load = [], None
+    events, load, last_human = [], None, None
     try:
         lines = open(transcript_path, encoding="utf-8", errors="replace")
     except (OSError, TypeError):
@@ -108,9 +118,10 @@ def read_events(transcript_path):
                 text = b.get("text", "") if b.get("type") == "text" else ""
                 if entry["type"] == "user":
                     if SKILL_LOADED.search(text):
-                        events, load = [], n
+                        events, load = ([last_human] if last_human else []), n  # the message that asked for it counts
                     elif text and not entry.get("isMeta"):
-                        events.append(("human", bool(USER_BYPASS.search(TAG.sub("\n", REMINDER.sub("", text))))))
+                        last_human = ("human", bool(USER_BYPASS.search(TAG.sub("\n", REMINDER.sub("", text)))))
+                        events.append(last_human)
                 elif text:
                     for m in STAGE.finditer(text):
                         events.append(("stage", m.group(1).lower(), m.group(2).lower(), m.group(3)))
@@ -133,6 +144,16 @@ def git(root, *args, env=None):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
+def pid_alive(pid):
+    try:
+        os.kill(int(pid), 0)
+    except (ValueError, ProcessLookupError):
+        return False
+    except OSError:  # e.g. PermissionError: exists, owned by someone else
+        return True
+    return True
+
+
 def fingerprint(root, state_dir):
     """Tree hash of the whole working tree (tracked + untracked, minus .gitignore'd files
     and UNSENSED paths), built in a temp index so the real index is never touched.
@@ -141,6 +162,13 @@ def fingerprint(root, state_dir):
     a huge non-ignored untracked file gets hashed on every call.
     """
     tmp = os.path.join(state_dir, "index.%d" % os.getpid())
+    for old in glob.glob(os.path.join(state_dir, "index.*")):  # left by a hook killed at its timeout
+        m = re.match(r"index\.(\d+)$", os.path.basename(old))  # never git's index.<pid>.lock
+        if m and not pid_alive(m.group(1)):  # not mtime: copy2 keeps the real index's old one
+            try:
+                os.remove(old)
+            except OSError:
+                pass
     real = git(root, "rev-parse", "--git-path", "index")
     try:
         if real and os.path.exists(os.path.join(root, real)):
@@ -196,20 +224,21 @@ class State:
         g = self.passed("gate")
         rung = RUNG.search(self.events[g][3]) if g >= 0 else None
         if g >= 0 and not rung and self.events[g][2] == "pass":  # a user bypass waives the rung
-            return ("G1", "a `rung=` in your `gate:` line, e.g. `gate: pass - tier=internal rung=micro - <reason>`")
+            return ("G1", "a `rung=` in your `gate:` line, e.g. `gate: pass - scope=feature tier=internal rung=micro - <reason>`")
         if g < 0:
             return ("G1", "a `gate:` line, and none is in your visible replies since the skill loaded "
                           "(the guard cannot see thinking). Write it as plain text before your next tool call, or, "
                           "if your output style forbids text between tool calls, run it as its own Bash call: "
-                          "echo \"gate: pass - tier=<sandbox|internal|prod> rung=<one-liner|micro|full|project> - <reason>\" "
+                          "echo \"gate: pass - scope=<feature|bugfix|...> tier=<sandbox|internal|prod> rung=<one-liner|micro|full|project> - <reason>\" "
                           "(SKILL.md section 1)")
-        if rung and rung.group(1) in ("full", "project"):
+        level = rung.group(1).lower() if rung else None
+        if level in ("full", "project"):
             p = self.passed("plan", g)
             if p < 0:
-                return ("G2", "the plan file and `plan: pass - ...` (rung=%s, SKILL.md section 2)" % rung.group(1))
+                return ("G2", "the plan file and `plan: pass - ...` (rung=%s, SKILL.md section 2)" % level)
             if self.passed("teardown/readiness", p) < 0:
                 return ("G2", "the 5 teardown rounds ending with `teardown/readiness: pass - ...` "
-                              "(rung=%s, SKILL.md section 3)" % rung.group(1))
+                              "(rung=%s, SKILL.md section 3)" % level)
         return None
 
 
@@ -233,7 +262,12 @@ def check_change_order(st, about_to_edit=None):
         return None
     if about_to_edit is not None and guarded(about_to_edit, st.root):
         return (missing[0], "code-better: edit blocked, needs %s first." % missing[1])
-    changed = st.changed_since(-1)
+    # No git: only Edit/Write calls are seen, and refused ones are in the transcript too.
+    # Since the last `verify:` line, so a loopback to Gate doesn't re-blame verified Build work.
+    v = st.last("stage", "verify")
+    if not any(e[:2] == ("stage", "gate") for e in st.events[:max(v, 0)]):
+        v = -1  # a verify line before any gate hides nothing
+    changed = st.changed_since(v) if st.tree is not None else []
     if changed:
         return (missing[0], "code-better: files changed before the gate: %s. Needs %s. If you made these "
                 "changes early, say so; never revert a file you did not change (the user may have)." % (", ".join(changed[:8]), missing[1]))
@@ -263,15 +297,16 @@ def check_bash(st, cmd):
     # One check per simple command, so `git push x && rm -rf y` doesn't read as a force push.
     segments = re.split(r"&&|\|\||[;|&\n]", HARMLESS_REDIRECT.sub(" ", cmd))
     risky = (
-        (FORCE_PUSH.search, "force push rewrites shared history; use `git revert <sha>` or `--force-with-lease` on your own branch"),
+        (FORCE_PUSH.search, "force push rewrites shared history; hand the user `git revert <sha>` instead"),
         (RESET_HARD.search, "`git reset --hard` destroys uncommitted work; use `git stash` or `git revert`"),
         (CLEAN_FORCE.search, "`git clean -f` deletes untracked files with no undo; list them with `git clean -n` and ask"),
-        (tf_apply_without_plan, "apply only a saved plan: `terraform plan -out=tfplan`, review it, then `terraform apply tfplan`"),
+        (lambda s: TF_DESTROY.search(unquoted(s)), "`terraform destroy` deletes live infrastructure; hand the user `terraform plan -destroy -out=tfplan` and `terraform apply tfplan`"),
+        (tf_apply_without_plan, "apply only a saved plan, and only the user applies: hand off `terraform plan -out=tfplan` and `terraform apply tfplan`"),
     )
     for test, why in risky:
-        if not st.bypass_ok and any(test(s) for s in segments):
+        if any(test(s) for s in segments):  # no bypass: the user runs these (SKILL.md section 6)
             return ("G5", "code-better: blocked irreversible command: %s (SKILL.md Rollback). "
-                    "The user can approve by starting a message with \"bypass\"." % why)
+                    "Print it for the user to run (SKILL.md section 6, Hand-off)." % why)
     missing = st.build_open()
     if missing:
         writes = INTERP_HEREDOC.search(cmd) or any(WRITES.search(unquoted(s)) for s in segments)
@@ -286,7 +321,7 @@ def check_bash(st, cmd):
         changed = st.changed_since(v)
         if changed:
             return ("G3", "code-better: %s changed since the last passing verify. Run Verify (SKILL.md section 5) "
-                    "and print `verify: pass - <n>/<n> ...` before committing." % ", ".join(changed[:8]))
+                    "and print `verify: pass - <n>/<n> ...`. Commits are the user's: hand off the commands (SKILL.md section 6)." % ", ".join(changed[:8]))
     return None
 
 
@@ -329,7 +364,8 @@ def decide(event):
         return None
     events, load = parsed
     root = os.environ.get("CLAUDE_PROJECT_DIR") or event.get("cwd") or os.getcwd()
-    state_dir = git(root, "rev-parse", "--path-format=absolute", "--git-path", "code-better")
+    state_dir = git(root, "rev-parse", "--git-path", "code-better")  # no --path-format: git < 2.31 lacks it
+    state_dir = state_dir and os.path.join(root, state_dir)  # relative to root, or already absolute
     snaps, tree, snap_file = [], None, None
     if state_dir:
         os.makedirs(state_dir, exist_ok=True)

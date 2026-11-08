@@ -1,10 +1,24 @@
 {
   "name": "code-better",
-  "version": "1.0.0",
-  "description": "Gated coding harness for large existing codebases: Gate, Plan, Teardown, Build, Verify, Commit, with hook-enforced gates and rollback guards.",
-  "author": { "name": "Neel Thomas" },
+  "version": "2.0.0",
+  "description": "AI-DLC-style coding lifecycle for large existing codebases: Inception (Gate, Plan, Teardown), Construction (Build, Verify), Hand-off (commit, PR, and deploy commands for the user to run). Scopes pick the stages, with approval checkpoints, an append-only audit trail, and hook-enforced gates and rollback guards.",
+  "author": {
+    "name": "Neel Thomas"
+  },
   "homepage": "https://github.com/neeltom92/code-better",
   "repository": "https://github.com/neeltom92/code-better",
   "license": "MIT",
-  "keywords": ["harness", "workflow", "tdd", "debugging", "code-review", "terraform", "kubernetes"]
+  "keywords": [
+    "harness",
+    "workflow",
+    "tdd",
+    "debugging",
+    "code-review",
+    "terraform",
+    "kubernetes",
+    "ai-dlc",
+    "sdlc",
+    "audit",
+    "approvals"
+  ]
 }

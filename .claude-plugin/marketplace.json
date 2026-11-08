@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "code-better",
-  "description": "code-better: a gated coding harness for large existing codebases.",
+  "description": "code-better: an AI-DLC-style, gated coding lifecycle for large existing codebases.",
   "owner": {
     "name": "Neel Thomas"
   },
@@ -9,7 +9,7 @@
     {
       "name": "code-better",
       "source": "./",
-      "description": "Gated coding harness for large existing codebases, with hook-enforced gates and rollback guards."
+      "description": "AI-DLC-style lifecycle (Inception, Construction, Hand-off) for large existing codebases: scopes, approval checkpoints, audit trail, hook-enforced gates."
     }
   ]
 }
